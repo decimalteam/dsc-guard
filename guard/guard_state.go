@@ -3,6 +3,8 @@ package guard
 import (
 	"sync"
 	"time"
+
+	tmlog "github.com/tendermint/tendermint/libs/log"
 )
 
 // State machine contains business logic to
@@ -16,8 +18,10 @@ type GuardStateMachine struct {
 	eventReadTimeout  time.Duration
 	watchersState     map[string]WatcherState
 	isTxValid         map[string]bool
-	isValidatorOnline map[string]bool
+	isValidatorOnline bool
 	isSkipSign        bool
+
+	logger tmlog.Logger
 
 	isRunning bool // flag for Start/Stop
 
@@ -30,25 +34,26 @@ type GuardStateMachine struct {
 type Guarder interface {
 	ReportWatcher(id string, state WatcherState)
 	ReportTxValidity(id string, valid bool)
-	ReportValidatorOnline(height int64, online bool)
+	ReportValidatorOnline(id string, height int64, online bool)
 	SetSign(height int64, signed bool)
 }
 
 type setOfflineFunc func()
 
-func NewGuardState(config Config, callback setOfflineFunc) *GuardStateMachine {
+func NewGuardState(logger tmlog.Logger, config Config, callback setOfflineFunc) *GuardStateMachine {
 	var signWindow = make([]bool, config.MissedBlocksWindow)
 	sm := &GuardStateMachine{
-		config:     config,
-		signWindow: signWindow,
+		eventChannel:       make(chan interface{}, 1000),
+		watchersState:      make(map[string]WatcherState),
+		isTxValid:          make(map[string]bool),
+		isValidatorOnline:  false,
+		state:              StateStarting,
+		logger:             logger,
+		config:             config,
+		signWindow:         signWindow,
+		setOfflineCallback: callback,
+		isRunning:          false,
 	}
-	sm.eventChannel = make(chan interface{}, 1)
-	sm.watchersState = make(map[string]WatcherState)
-	sm.isTxValid = make(map[string]bool)
-	sm.isValidatorOnline = make(map[string]bool)
-	sm.state = StateStarting
-	sm.setOfflineCallback = callback
-	sm.isRunning = true
 	sm.ResetWindow()
 	return sm
 }
@@ -58,9 +63,13 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 	if ok {
 		sm.isTxValid[txValid.node] = txValid.valid
 	}
+	// TODO: check correctness of summaryValidatorOnline for multiple watchers
+	// when watchers online-offline, skip blocks etc.
 	valState, ok := ev.(eventValidatorState)
 	if ok {
-		sm.isValidatorOnline[valState.node] = valState.online
+		if valState.height >= sm.currentHeight {
+			sm.isValidatorOnline = valState.online
+		}
 	}
 	watcherState, ok := ev.(eventWatcherState)
 	if ok {
@@ -76,6 +85,7 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 		{
 			if sm.summaryWatcherState() == WatcherConnecting {
 				sm.state = StateConnecting
+				sm.logger.Debug("guard state transition StateStarting->StateConnecting")
 				break
 			}
 			if sm.summaryWatcherState() == WatcherWatching {
@@ -83,9 +93,11 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 				sm.isSkipSign = false
 				sm.state = StateWatching
 				if !sm.summaryValidatorOnline() && sm.summaryTxValid() {
+					sm.logger.Debug("guard state transition StateStarting->StateValidatorIsOffline")
 					sm.state = StateValidatorIsOffline
 				}
 				if !sm.summaryTxValid() {
+					sm.logger.Debug("guard state transition StateStarting->StateWatchingWithoutTx")
 					sm.state = StateWatchingWithoutTx
 				}
 				break
@@ -94,14 +106,17 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 	case StateConnecting:
 		{
 			if sm.summaryWatcherState() == WatcherWatching && sm.summaryValidatorOnline() && sm.summaryTxValid() {
+				sm.logger.Debug("guard state transition StateConnecting->StateWatching")
 				sm.state = StateWatching
 				break
 			}
 			if sm.summaryWatcherState() == WatcherWatching && !sm.summaryValidatorOnline() && sm.summaryTxValid() {
+				sm.logger.Debug("guard state transition StateConnecting->StateValidatorIsOffline")
 				sm.state = StateValidatorIsOffline
 				break
 			}
 			if sm.summaryWatcherState() == WatcherWatching && !sm.summaryTxValid() {
+				sm.logger.Debug("guard state transition StateConnecting->StateWatchingWithoutTx")
 				sm.state = StateWatchingWithoutTx
 				break
 			}
@@ -109,19 +124,24 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 	case StateWatching:
 		{
 			if sm.summaryWatcherState() == WatcherConnecting {
+				sm.logger.Debug("guard state transition StateWatching->StateConnecting")
 				sm.state = StateConnecting
 				break
 			}
 			if !sm.summaryTxValid() {
+				sm.logger.Debug("guard state transition StateWatching->StateWatchingWithoutTx")
 				sm.state = StateWatchingWithoutTx
 				break
 			}
 			if sm.summaryTxValid() && !sm.summaryValidatorOnline() {
+				sm.logger.Debug("guard state transition StateWatching->StateValidatorIsOffline")
 				sm.state = StateValidatorIsOffline
 				break
 			}
 			if sm.isSkipSign {
+				sm.logger.Debug("guard: send set_offline")
 				sm.setOfflineCallback()
+				sm.logger.Debug("guard state transition StateWatching->StateStarting")
 				sm.state = StateStarting
 				break
 			}
@@ -129,10 +149,12 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 	case StateValidatorIsOffline:
 		{
 			if sm.summaryWatcherState() == WatcherConnecting {
+				sm.logger.Debug("guard state transition StateValidatorIsOffline->StateConnecting")
 				sm.state = StateConnecting
 				break
 			}
 			if sm.summaryTxValid() && sm.summaryValidatorOnline() {
+				sm.logger.Debug("guard state transition StateValidatorIsOffline->StateWatching")
 				sm.state = StateWatching
 				break
 			}
@@ -140,16 +162,22 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 	case StateWatchingWithoutTx:
 		{
 			if sm.summaryWatcherState() == WatcherConnecting {
+				sm.logger.Debug("guard state transition StateWatchingWithoutTx->StateConnecting")
 				sm.state = StateConnecting
 				break
 			}
 			if sm.summaryTxValid() && sm.summaryValidatorOnline() {
+				sm.logger.Debug("guard state transition StateWatchingWithoutTx->StateWatching")
 				sm.state = StateWatching
 				break
 			}
 			if sm.summaryTxValid() && !sm.summaryValidatorOnline() {
+				sm.logger.Debug("guard state transition StateWatchingWithoutTx->StateValidatorIsOffline")
 				sm.state = StateValidatorIsOffline
 				break
+			}
+			if sm.summaryValidatorOnline() {
+				sm.logger.Error("Validator is online, but transaction is invalid! You can't protect validator from slash")
 			}
 		}
 	}
@@ -226,11 +254,14 @@ func (sm *GuardStateMachine) ReportTxValidity(id string, valid bool) {
 	sm.eventChannel <- eventTxValidity{node: id, valid: valid}
 }
 
-func (sm *GuardStateMachine) ReportValidatorOnline(id string, online bool) {
+func (sm *GuardStateMachine) ReportValidatorOnline(id string, height int64, online bool) {
 	if !sm.isRunning {
 		return
 	}
-	sm.eventChannel <- eventValidatorState{node: id, online: online}
+	if height < sm.currentHeight {
+		return
+	}
+	sm.eventChannel <- eventValidatorState{node: id, height: height, online: online}
 }
 
 func (sm *GuardStateMachine) summaryWatcherState() WatcherState {
@@ -255,13 +286,5 @@ func (sm *GuardStateMachine) summaryTxValid() bool {
 }
 
 func (sm *GuardStateMachine) summaryValidatorOnline() bool {
-	if len(sm.isValidatorOnline) == 0 {
-		return false
-	}
-	for _, b := range sm.isValidatorOnline {
-		if !b {
-			return false
-		}
-	}
-	return true
+	return sm.isValidatorOnline
 }

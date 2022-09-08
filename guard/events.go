@@ -12,6 +12,7 @@ type eventTxValidity struct {
 
 type eventValidatorState struct {
 	node   string
+	height int64
 	online bool
 }
 

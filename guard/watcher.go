@@ -111,6 +111,8 @@ func (w *Watcher) Start() {
 						w.logger.Error(fmt.Sprintf("[%s] NewBlock processing error: %s", w.node, err.Error()))
 						doBreak = true
 					}
+					// TODO: may be check less often
+					w.CheckTxData()
 				case result := <-w.validatorEvents:
 					err = w.handleEventValidatorSetUpdates(result)
 					if err != nil {
@@ -162,20 +164,44 @@ func (w *Watcher) CleanUp() {
 	w.lastHeight = 0
 }
 
-func (w *Watcher) SetTxData(txData []byte) error {
-	res, err := w.client.CheckTx(context.Background(), txData)
+func (w *Watcher) SetTxData(txData []byte) {
+	w.txData = txData
+}
+
+func (w *Watcher) CheckTxData() {
+	res, err := w.client.CheckTx(context.Background(), w.txData)
 	if err != nil {
-		return err
+		w.logger.Error(fmt.Sprintf("[%s] CheckTx error: %s", w.node, err.Error()))
+		return
 	}
 	if res.Code != 0 {
 		w.logger.Error(fmt.Sprintf("[%s] Check set_offline transaction: code=%d, codespace=%s, log=%s", w.node, res.Code, res.Codespace, res.Log))
 		w.guard.ReportTxValidity(w.node, false)
-		return nil
+		return
 	}
 	w.logger.Error(fmt.Sprintf("[%s] Check set_offline transaction ok", w.node))
 	w.guard.ReportTxValidity(w.node, true)
-	w.txData = txData
-	return nil
+}
+
+func (w *Watcher) SendOffline() {
+	if w.txData == nil {
+		w.logger.Error(fmt.Sprintf("[%s] set_offline transaction is null", w.node))
+		return
+	}
+	if w.state != WatcherWatching {
+		w.logger.Error(fmt.Sprintf("[%s] Watcher not watching", w.node))
+		return
+	}
+	res, err := w.client.BroadcastTxSync(context.Background(), w.txData)
+	if err != nil {
+		w.logger.Error(fmt.Sprintf("[%s] BroadcastTxSync error: %s", w.node, err.Error()))
+		return
+	}
+	if res.Code != 0 {
+		w.logger.Error(fmt.Sprintf("[%s] BroadcastTxSync set_offline transaction: code=%d, codespace=%s, log=%s", w.node, res.Code, res.Codespace, res.Log))
+	}
+	w.txData = nil
+	w.logger.Info("[%s] BroadcastTxSync succesful")
 }
 
 // //////////////////////////////////////////////////////////////////////////////
@@ -215,12 +241,12 @@ func (w *Watcher) handleEventValidatorSetUpdates(result coretypes.ResultEvent) (
 
 	for _, validator := range event.ValidatorUpdates {
 		if strings.EqualFold(validator.Address.String(), w.config.ValidatorAddress) {
-			w.guard.ReportValidatorOnline(w.lastHeight, validator.VotingPower > 0)
+			w.guard.ReportValidatorOnline(w.node, w.lastHeight, validator.VotingPower > 0)
 			return nil
 		}
 	}
 	// validator not found
-	w.guard.ReportValidatorOnline(w.lastHeight, false)
+	w.guard.ReportValidatorOnline(w.node, w.lastHeight, false)
 
 	return nil
 }
@@ -247,12 +273,12 @@ func (w *Watcher) queryValidatorSet() error {
 	for _, v := range validators.Validators {
 		w.logger.Info(fmt.Sprintf("[%s] validator in set: %s", w.node, v.Address.String()))
 		if strings.EqualFold(v.Address.String(), w.config.ValidatorAddress) {
-			w.guard.ReportValidatorOnline(w.lastHeight, v.VotingPower > 0)
+			w.guard.ReportValidatorOnline(w.node, w.lastHeight, v.VotingPower > 0)
 			return nil
 		}
 	}
 	// validator not found
-	w.guard.ReportValidatorOnline(w.lastHeight, false)
+	w.guard.ReportValidatorOnline(w.node, w.lastHeight, false)
 
 	return nil
 }

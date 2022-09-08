@@ -6,10 +6,18 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	tmlog "github.com/tendermint/tendermint/libs/log"
 )
 
+// dummyWriter implement io.Writer
+type dummyWriter struct{}
+
+func (d dummyWriter) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
 func TestGuardStateTransition(t *testing.T) {
-	gsm := NewGuardState(Config{}, nil)
+	gsm := NewGuardState(tmlog.NewTMLogger(dummyWriter{}), Config{}, nil)
 	// check connecting
 	require.Equal(t, StateStarting, gsm.state)
 	gsm.ProcessEvent(eventWatcherState{"a", WatcherConnecting})
@@ -28,7 +36,7 @@ func TestGuardStateTransition(t *testing.T) {
 	require.Equal(t, StateValidatorIsOffline, gsm.state)
 
 	// validator state known = online
-	gsm.ProcessEvent(eventValidatorState{"b", true})
+	gsm.ProcessEvent(eventValidatorState{"b", 1, true})
 	require.Equal(t, StateWatching, gsm.state)
 
 	// tx now invalid (someone uses mnemonic etc...)
@@ -40,19 +48,19 @@ func TestGuardStateTransition(t *testing.T) {
 	require.Equal(t, StateWatching, gsm.state)
 
 	// validator now is offline by unknown reason
-	gsm.ProcessEvent(eventValidatorState{"b", false})
+	gsm.ProcessEvent(eventValidatorState{"b", 2, false})
 	require.Equal(t, StateValidatorIsOffline, gsm.state)
 }
 
 func TestGuardStateTxTrigger(t *testing.T) {
 	var isOfflineTriggered = false
-	gsm := NewGuardState(Config{}, func() {
+	gsm := NewGuardState(tmlog.NewTMLogger(dummyWriter{}), Config{}, func() {
 		isOfflineTriggered = true
 	})
 	// check connecting
 	require.Equal(t, StateStarting, gsm.state)
 	gsm.ProcessEvent(eventWatcherState{"a", WatcherWatching})
-	gsm.ProcessEvent(eventValidatorState{"b", true})
+	gsm.ProcessEvent(eventValidatorState{"b", 1, true})
 	gsm.ProcessEvent(eventTxValidity{"a", true})
 	require.Equal(t, StateWatching, gsm.state)
 	// trigger offline
@@ -63,21 +71,18 @@ func TestGuardStateTxTrigger(t *testing.T) {
 
 func TestGuardRun(t *testing.T) {
 	var isOfflineTriggered = false
-	gsm := NewGuardState(Config{
-		MissedBlocksLimit:  8,
-		MissedBlocksWindow: 24,
-	}, func() {
+	gsm := NewGuardState(tmlog.NewTMLogger(dummyWriter{}), Config{MissedBlocksLimit: 8, MissedBlocksWindow: 24}, func() {
 		isOfflineTriggered = true
 	})
 	// check connecting
 	require.Equal(t, StateStarting, gsm.state)
 	gsm.eventReadTimeout = time.Second
 	wg := sync.WaitGroup{}
+	gsm.isRunning = true
+	gsm.state = StateStarting
 
 	// like Start(), but with WaitGroup for correct testing
 	go func() {
-		gsm.isRunning = true
-		gsm.state = StateStarting
 		for gsm.isRunning {
 			select {
 			case ev := <-gsm.eventChannel:
@@ -103,10 +108,10 @@ func TestGuardRun(t *testing.T) {
 	// watching: tx valid, validator online
 	wg.Add(2)
 	gsm.ReportTxValidity("a", true)
-	gsm.ReportValidatorOnline("a", true)
+	gsm.ReportValidatorOnline("a", 1, true)
 	wg.Add(2)
 	gsm.ReportTxValidity("b", true)
-	gsm.ReportValidatorOnline("b", true)
+	gsm.ReportValidatorOnline("b", 1, true)
 	wg.Wait()
 	require.Equal(t, StateWatching, gsm.state)
 	// now skipping
@@ -118,7 +123,7 @@ func TestGuardRun(t *testing.T) {
 	require.True(t, isOfflineTriggered)
 	require.Equal(t, StateStarting, gsm.state)
 	wg.Add(1)
-	gsm.ReportValidatorOnline("a", false)
+	gsm.ReportValidatorOnline("a", 10, false)
 	wg.Wait()
 	require.Equal(t, StateValidatorIsOffline, gsm.state)
 	gsm.Stop()

@@ -28,8 +28,8 @@ func (sg *stubGuard) ReportWatcher(id string, state guard.WatcherState) {
 func (sg *stubGuard) ReportTxValidity(id string, valid bool) {
 	sg.logger.Debug(fmt.Sprintf("ReportTxValidity(%s) valid=%v", id, valid))
 }
-func (sg *stubGuard) ReportValidatorOnline(height int64, online bool) {
-	sg.logger.Debug(fmt.Sprintf("ReportValidatorOnline height=%d online=%v", height, online))
+func (sg *stubGuard) ReportValidatorOnline(id string, height int64, online bool) {
+	sg.logger.Debug(fmt.Sprintf("ReportValidatorOnline(%s) height=%d online=%v", id, height, online))
 }
 
 func (sg *stubGuard) SetSign(height int64, signed bool) {
@@ -38,6 +38,8 @@ func (sg *stubGuard) SetSign(height int64, signed bool) {
 
 func main() {
 	logger := tmlog.NewTMLogger(os.Stdout)
+	// http://localhost:26657
+	// https://devnet-dec2-node-01.decimalchain.com/rpc/
 	w := guard.NewWatcher("http://localhost:26657", guard.Config{
 		FallbackPause:    1,
 		NewBlockTimeout:  10,
