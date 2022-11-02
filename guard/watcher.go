@@ -179,7 +179,7 @@ func (w *Watcher) CheckTxData() {
 		w.guard.ReportTxValidity(w.node, false)
 		return
 	}
-	w.logger.Error(fmt.Sprintf("[%s] Check set_offline transaction ok", w.node))
+	w.logger.Info(fmt.Sprintf("[%s] Check set_offline transaction ok", w.node))
 	w.guard.ReportTxValidity(w.node, true)
 }
 
