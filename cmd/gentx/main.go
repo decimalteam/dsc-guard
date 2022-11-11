@@ -13,6 +13,9 @@ import (
 )
 
 func main() {
+	cfg := sdk.GetConfig()
+	cfg.SetBech32PrefixForValidator("dxvaloper", "dxvaloperpub")
+
 	viper.SetConfigFile(".env")
 	err := viper.ReadInConfig()
 	if err != nil {
