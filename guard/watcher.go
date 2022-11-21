@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	tmlog "github.com/tendermint/tendermint/libs/log"
@@ -40,6 +41,7 @@ func NewWatcher(node string, config Config, guard Guarder, logger tmlog.Logger) 
 func (w *Watcher) Start() {
 	var err error
 	var doBreak bool
+	var counter = NewBlockCounter(5)
 	w.state = WatcherConnecting
 	var ctx = context.Background()
 	// infinity loop: connect -> initial query (fallback to connect) -> watch block events (fallback to connect)
@@ -106,13 +108,14 @@ func (w *Watcher) Start() {
 				doBreak = false
 				select {
 				case result := <-w.blockEvents:
-					err = w.handleEventNewBlock(result)
+					block, err := w.handleEventNewBlock(result)
 					if err != nil {
 						w.logger.Error(fmt.Sprintf("[%s] NewBlock processing error: %s", w.node, err.Error()))
 						doBreak = true
 					}
-					// TODO: may be check less often
-					w.CheckTxData()
+					if counter.increment(block) {
+						w.CheckTxData()
+					}
 				case result := <-w.validatorEvents:
 					err = w.handleEventValidatorSetUpdates(result)
 					if err != nil {
@@ -201,17 +204,17 @@ func (w *Watcher) SendOffline() {
 		w.logger.Error(fmt.Sprintf("[%s] BroadcastTxSync set_offline transaction: code=%d, codespace=%s, log=%s", w.node, res.Code, res.Codespace, res.Log))
 	}
 	w.txData = nil
-	w.logger.Info("[%s] BroadcastTxSync succesful")
+	w.logger.Info(fmt.Sprintf("[%s] BroadcastTxSync succesful", w.node))
 }
 
 // //////////////////////////////////////////////////////////////////////////////
 // Handling events from Tendermint client
 // //////////////////////////////////////////////////////////////////////////////
 
-func (w *Watcher) handleEventNewBlock(result coretypes.ResultEvent) (err error) {
+func (w *Watcher) handleEventNewBlock(result coretypes.ResultEvent) (block int64, err error) {
 	event, ok := result.Data.(tmtypes.EventDataNewBlock)
 	if !ok {
-		return fmt.Errorf("unable to cast received event to struct tmtypes.EventDataNewBlock: %T", result.Data)
+		return 0, fmt.Errorf("unable to cast received event to struct tmtypes.EventDataNewBlock: %T", result.Data)
 	}
 
 	w.logger.Info(fmt.Sprintf("[%s] Received new block %d", w.node, event.Block.Height))
@@ -220,7 +223,6 @@ func (w *Watcher) handleEventNewBlock(result coretypes.ResultEvent) (err error) 
 	signed := false
 	for _, s := range event.Block.LastCommit.Signatures {
 		if strings.EqualFold(s.ValidatorAddress.String(), w.config.ValidatorAddress) {
-			w.logger.Info(fmt.Sprintf("Signature length = %d", len(s.Signature)))
 			signed = len(s.Signature) > 0
 			break
 		}
@@ -228,7 +230,7 @@ func (w *Watcher) handleEventNewBlock(result coretypes.ResultEvent) (err error) 
 
 	w.guard.SetSign(w.lastHeight, signed)
 
-	return
+	return event.Block.Height, nil
 }
 
 func (w *Watcher) handleEventValidatorSetUpdates(result coretypes.ResultEvent) (err error) {
@@ -281,4 +283,35 @@ func (w *Watcher) queryValidatorSet() error {
 	w.guard.ReportValidatorOnline(w.node, w.lastHeight, false)
 
 	return nil
+}
+
+type blockCounter struct {
+	lastBlock int64
+	counter   int64
+	limit     int64
+	mu        sync.Mutex
+}
+
+func NewBlockCounter(limit int64) *blockCounter {
+	return &blockCounter{
+		lastBlock: 0,
+		counter:   0,
+		limit:     limit,
+	}
+}
+
+func (bc *blockCounter) increment(block int64) bool {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+
+	if block > bc.lastBlock {
+		bc.lastBlock = block
+		bc.counter++
+	}
+
+	if bc.counter >= bc.limit {
+		bc.counter = 0
+		return true
+	}
+	return false
 }

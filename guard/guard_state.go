@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -139,7 +140,7 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 				break
 			}
 			if sm.isSkipSign {
-				sm.logger.Debug("guard: send set_offline")
+				sm.logger.Info("guard: send set_offline")
 				sm.setOfflineCallback()
 				sm.logger.Debug("guard state transition StateWatching->StateStarting")
 				sm.state = StateStarting
@@ -228,13 +229,20 @@ func (sm *GuardStateMachine) SetSign(height int64, signed bool) {
 		// }
 	}
 	sm.currentHeight = height
-	sm.signWindow[int(sm.currentHeight)%sm.config.MissedBlocksWindow] = signed
+	if sm.summaryValidatorOnline() {
+		sm.signWindow[int(sm.currentHeight)%sm.config.MissedBlocksWindow] = signed
+	} else {
+		sm.signWindow[int(sm.currentHeight)%sm.config.MissedBlocksWindow] = true
+	}
 	notSignedCount := 0
 	for _, signed := range sm.signWindow {
 		if !signed {
 			notSignedCount++
 		}
 	}
+
+	sm.logger.Debug(fmt.Sprintf("missed blocks in window = %d", notSignedCount))
+
 	if notSignedCount >= sm.config.MissedBlocksLimit {
 		sm.eventChannel <- eventValidatorSkipSign{}
 	}
