@@ -14,7 +14,7 @@ import (
 
 func main() {
 	cfg := sdk.GetConfig()
-	cfg.SetBech32PrefixForValidator("dxvaloper", "dxvaloperpub")
+	cfg.SetBech32PrefixForValidator("d0valoper", "d0valoperpub")
 
 	viper.SetConfigFile(".env")
 	err := viper.ReadInConfig()
@@ -23,10 +23,9 @@ func main() {
 		return
 	}
 	dscGateway := viper.GetString("DECIMAL_GATEWAY")
-	dscNode := viper.GetString("DECIMAL_NODE")
 	mnemonic := viper.GetString("MNEMONIC")
 
-	api := dscApi.NewAPI(dscGateway, dscNode)
+	api := dscApi.NewAPI(dscGateway)
 
 	acc, err := dscWallet.NewAccountFromMnemonicWords(mnemonic, "")
 	if err != nil {

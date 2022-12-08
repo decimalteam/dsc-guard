@@ -2,6 +2,7 @@ package guard
 
 type GlobalState = uint
 type WatcherState = uint
+type TxState = uint
 
 const (
 	StateStarting GlobalState = iota
@@ -15,4 +16,10 @@ const (
 	WatcherConnecting WatcherState = iota
 	WatcherQueryValidator
 	WatcherWatching
+)
+
+const (
+	TxUnknown TxState = iota
+	TxInvalid
+	TxValid
 )

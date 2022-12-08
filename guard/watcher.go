@@ -311,6 +311,9 @@ func (bc *blockCounter) increment(block int64) bool {
 
 	if bc.counter >= bc.limit {
 		bc.counter = 0
+	}
+	// check on start
+	if bc.counter == 1 {
 		return true
 	}
 	return false
