@@ -66,6 +66,6 @@ For example if `HTTP_LISTENER=localhost:11111`, then `http://127.0.0.1:11111/` w
     - no new block after `NEW_BLOCK_TIMEOUT` seconds: blockchain is stuck or all listening nodes disconnected from blockchain
 - `current_height` - current blockchain height (block)
 - `transaction_status` - valid, invalid, unknown (when guard starts)
-- `validator_online`
+- `validator_online` - boolena, true when validator online
 - `watchers_count` - count of watchers/nodes to listen
 - `watchers_watching` - count of watchers, connected to nodes, and watching (listening) node
