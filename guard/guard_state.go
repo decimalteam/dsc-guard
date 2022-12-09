@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 type GuardStateMachine struct {
 	signWindow        []bool
 	currentHeight     int64
+	lastHeightUpdate  time.Time
 	config            Config
 	state             GlobalState
 	eventChannel      chan interface{}
@@ -54,6 +56,7 @@ func NewGuardState(logger tmlog.Logger, config Config, callback setOfflineFunc) 
 		signWindow:         signWindow,
 		setOfflineCallback: callback,
 		isRunning:          false,
+		lastHeightUpdate:   time.Now(),
 	}
 	sm.ResetWindow()
 	return sm
@@ -233,6 +236,7 @@ func (sm *GuardStateMachine) SetSign(height int64, signed bool) {
 		// }
 	}
 	sm.currentHeight = height
+	sm.lastHeightUpdate = time.Now()
 	if sm.summaryValidatorOnline() {
 		sm.signWindow[int(sm.currentHeight)%sm.config.MissedBlocksWindow] = signed
 	} else {
@@ -299,4 +303,50 @@ func (sm *GuardStateMachine) summaryTxValidity() TxState {
 
 func (sm *GuardStateMachine) summaryValidatorOnline() bool {
 	return sm.isValidatorOnline
+}
+
+// GetJsonStatus return current state of guard in json
+func (sm *GuardStateMachine) GetJsonStatus() []byte {
+	critical := ""
+	if sm.summaryWatcherState() == WatcherConnecting {
+		critical = "watchers are disconnected from nodes"
+	}
+	if sm.summaryValidatorOnline() && sm.summaryTxValidity() == TxInvalid {
+		critical = "validator is online and transaction is invalid"
+	}
+	if critical == "" && time.Now().Sub(sm.lastHeightUpdate).Seconds() > float64(sm.config.NewBlockTimeout) {
+		critical = fmt.Sprintf("last block received more than %d seconds ago", sm.config.NewBlockTimeout)
+	}
+	watchers_count := 0
+	watchers_watching := 0
+	for _, ws := range sm.watchersState {
+		watchers_count++
+		if ws == WatcherWatching {
+			watchers_watching++
+		}
+	}
+	tx_validity := ""
+	switch sm.summaryTxValidity() {
+	case TxUnknown:
+		tx_validity = "unknown"
+	case TxInvalid:
+		tx_validity = "invalid"
+	case TxValid:
+		tx_validity = "valid"
+	}
+
+	bz, err := json.Marshal(
+		map[string]interface{}{
+			"validator_online":   sm.summaryValidatorOnline(),
+			"transaction_status": tx_validity,
+			"critical":           critical,
+			"watchers_count":     watchers_count,
+			"watchers_watching":  watchers_watching,
+			"current_height":     sm.currentHeight,
+		},
+	)
+	if err != nil {
+		return []byte("{}")
+	}
+	return bz
 }

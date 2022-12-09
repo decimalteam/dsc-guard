@@ -11,11 +11,11 @@ type Config struct {
 	SetOfflineTx        string `mapstructure:"SET_OFFLINE_TX" mandatory:"true"`
 	EnableGracePeriod   bool   `mapstructure:"ENABLE_GRACE_PERIOD" mandatory:"true" default:"true"`
 	GracePeriodDuration int    `mapstructure:"GRACE_PERIOD_DURATION" mandatory:"true" default:"15840"`
+	HttpListener        string `mapstructure:"HTTP_LISTENER" mandatory:"true"`
 }
 
 const Subscriber = "watcher"
 
-//const QueryNewBlock = "tm.events.type='NewBlock'"
 const QueryNewBlock = "tm.event = 'NewBlock'"
 const QueryValidatorSet = "tm.event = 'ValidatorSetUpdates'"
 const ChannelCapacity = 1000 // 'buffer' (channel) capacity for events from tendermint

@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"bitbucket.org/decimalteam/dsc-guard/guard"
 	"github.com/spf13/viper"
@@ -17,6 +20,7 @@ import (
 func main() {
 	var watchers []*guard.Watcher
 	var wg sync.WaitGroup
+	var httpServer *http.Server
 
 	logger := tmlog.NewTMLogger(os.Stdout)
 
@@ -70,6 +74,25 @@ func main() {
 		watchers = append(watchers, w)
 	}
 
+	if config.HttpListener > "" {
+		httpServer = &http.Server{
+			Addr:        config.HttpListener,
+			Handler:     nil, // default http mux
+			ReadTimeout: 5 * time.Second,
+		}
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Write(gsm.GetJsonStatus())
+		})
+		wg.Add(1)
+		go func() {
+			err := httpServer.ListenAndServe()
+			if err != nil && err != http.ErrServerClosed {
+				logger.Error(fmt.Sprintf("error in http.ListenAndServe: %s", err.Error()))
+			}
+			wg.Done()
+		}()
+	}
+
 	// TODO: add http endpoint for transaction dynamic update
 
 	exit := make(chan os.Signal, 1)
@@ -83,6 +106,9 @@ func main() {
 		w.Stop()
 	}
 	gsm.Stop()
+	if httpServer != nil {
+		httpServer.Shutdown(context.Background())
+	}
 
 	wg.Wait()
 }
