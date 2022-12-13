@@ -10,7 +10,7 @@ Decimal Smart Chain Guard is a tool helping to monitor validator node and set it
 - watchers can infinity reconnect
 
 3. Watch for blocks, validator set changes and count missed blocks
-- periodicaly validate set_offline transaction
+- periodicaly validate set_offline transaction. If transaction is valid (right account number, account sequence, chain id...) guard will report `Check set_offline transaction ok` otherwise it will report error
 
 4. If validator is online and missed some count of blocks, then sends set_offline
 
