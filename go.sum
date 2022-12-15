@@ -1,5 +1,5 @@
-bitbucket.org/decimalteam/dsc-go-sdk v1.4.1 h1:zH1iRsoP2axgVlUO3fjTM7Tol9UujGUd2aPqjbZyOa8=
-bitbucket.org/decimalteam/dsc-go-sdk v1.4.1/go.mod h1:yJMV2ypAxjY+KOZNYBgQ1KaXtzAwbeJlY8t7CnOv4Ig=
+bitbucket.org/decimalteam/dsc-go-sdk v1.4.4 h1:O5kN32mQ6qojX2ZJRZYBQB+LuSD4lazMWcN7bcRnJjc=
+bitbucket.org/decimalteam/dsc-go-sdk v1.4.4/go.mod h1:yJMV2ypAxjY+KOZNYBgQ1KaXtzAwbeJlY8t7CnOv4Ig=
 bitbucket.org/decimalteam/go-smart-node v0.0.8-0.20221206074536-d32b89b1ffef h1:M0/YuVVrwR5qCM7zvQYirb6l4KA4eLO0wMJbmmEc3oo=
 bitbucket.org/decimalteam/go-smart-node v0.0.8-0.20221206074536-d32b89b1ffef/go.mod h1:CgGB2BKCh5upz+TXHxm40WZQSrNTjC1RtiWEPKOAaPk=
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=

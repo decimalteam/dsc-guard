@@ -3,7 +3,7 @@ module bitbucket.org/decimalteam/dsc-guard
 go 1.18
 
 require (
-	bitbucket.org/decimalteam/dsc-go-sdk v1.4.1
+	bitbucket.org/decimalteam/dsc-go-sdk v1.4.4
 	github.com/cosmos/cosmos-sdk v0.46.4
 	github.com/spf13/viper v1.13.0
 	github.com/stretchr/testify v1.8.1
