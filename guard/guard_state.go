@@ -47,6 +47,7 @@ func NewGuardState(logger tmlog.Logger, config Config, callback setOfflineFunc) 
 	var signWindow = make([]bool, config.MissedBlocksWindow)
 	sm := &GuardStateMachine{
 		eventChannel:       make(chan interface{}, 1000),
+		eventReadTimeout:   time.Second,
 		watchersState:      make(map[string]WatcherState),
 		isTxValid:          make(map[string]TxState),
 		isValidatorOnline:  false,
@@ -194,19 +195,20 @@ func (sm *GuardStateMachine) ProcessEvent(ev interface{}) {
 func (sm *GuardStateMachine) Start() {
 	sm.isRunning = true
 	sm.state = StateStarting
+	tick := time.NewTicker(sm.eventReadTimeout)
 	for sm.isRunning {
 		select {
 		case ev := <-sm.eventChannel:
 			{
 				sm.ProcessEvent(ev)
 			}
-		case <-time.After(sm.eventReadTimeout):
+		case <-tick.C:
 			{
 				continue
 			}
 		}
-
 	}
+	tick.Stop()
 }
 
 func (sm *GuardStateMachine) Stop() {
