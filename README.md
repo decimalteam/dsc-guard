@@ -24,7 +24,7 @@ Decimal Smart Chain Guard is a tool helping to monitor validator node and set it
 To configure `guard` tool you should create file `.env` at directory `cmd/dsc-guard`. Example of the configuration:
 
 ```bash
-NODES_ENDPOINTS=tcp://localhost:26657
+NODES_ENDPOINTS=http://localhost:26657
 MISSED_BLOCKS_LIMIT=8
 MISSED_BLOCKS_WINDOW=24
 NEW_BLOCK_TIMEOUT=10
@@ -36,7 +36,7 @@ SET_OFFLINE_TX=ab01282816a90a1a51f5833b0a14d0c71c31a891e5023ae63fd2bcf2732f04f32
 
 Where:
 
-- `NODES_ENDPOINTS` - list of Decimal Node RPC endpoints which should be used to listen new blocks (can be specified several endpoints separated by `,`)
+- `NODES_ENDPOINTS` - list of Decimal Node RPC endpoints which should be used to listen new blocks (can be specified several endpoints separated by `,`, protocol scheme must be http/https)
 - `MISSED_BLOCKS_LIMIT` and `MISSED_BLOCKS_WINDOW` - when at least `MISSED_BLOCKS_LIMIT` blocks of last `MISSED_BLOCKS_WINDOW` blocks are missed to sign by monitoring validator `set_offline` transaction will be send to all connected nodes to turn of validator
 - `NEW_BLOCK_TIMEOUT` - timeout of receiving new block in seconds (if no new blocks are received during this duration then assumed node is disconnected)
 - `FALLBACK_PAUSE` - time in seconds for reconnect to node
