@@ -20,6 +20,7 @@ import (
 func main() {
 	var watchers []*guard.Watcher
 	var wg sync.WaitGroup
+	var exclusiveCheck = guard.NewCooldownLock(time.Second * 6) // up to 6 seconds - time of block
 	var httpServer *http.Server
 
 	logger := tmlog.NewTMLogger(os.Stdout)
@@ -64,6 +65,7 @@ func main() {
 			config,
 			gsm,
 			logger,
+			exclusiveCheck,
 		)
 		w.SetTxData(txData)
 		wg.Add(1)

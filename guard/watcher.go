@@ -2,6 +2,7 @@ package guard
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -25,17 +26,22 @@ type Watcher struct {
 	lastValidatorHeight int64
 	lastSignatureHeight int64
 	muSetLastHeight     sync.Mutex
+
+	// this mutex need to avoid transaction check in same time for different watchers
+	cLock *CooldownLock
 }
 
-func NewWatcher(node string, config Config, guard Guarder, logger tmlog.Logger) *Watcher {
+func NewWatcher(node string, config Config, guard Guarder, logger tmlog.Logger, exclusiveCheck *CooldownLock) *Watcher {
 	return &Watcher{
 		node:      node,
 		config:    config,
 		guard:     guard,
 		isRunning: true,
 		logger:    logger,
+		cLock:     exclusiveCheck,
 	}
 }
+
 func (w *Watcher) Start() {
 	var err error
 	var doBreak bool
@@ -102,7 +108,7 @@ func (w *Watcher) Start() {
 					break
 				}
 				// Decimal: >5 sec per block
-				time.Sleep(time.Second * 5)
+				time.Sleep(time.Second*5 + time.Millisecond*time.Duration(rand.Intn(500)))
 			}
 		}
 	}
@@ -122,6 +128,11 @@ func (w *Watcher) SetTxData(txData []byte) {
 }
 
 func (w *Watcher) checkTxData() {
+	if !w.cLock.TryLock() {
+		return
+	}
+	defer w.cLock.Unlock()
+
 	res, err := w.client.CheckTx(w.txData)
 	if err != nil {
 		w.logger.Error(fmt.Sprintf("[%s] CheckTx error: %s", w.node, err.Error()))
@@ -256,4 +267,30 @@ func (bc *blockCounter) increment(block int64) bool {
 		return true
 	}
 	return false
+}
+
+// This type need to avoid too often checks transaction and 'sequence mismatch...' error
+type CooldownLock struct {
+	lastLock time.Time
+	cooldown time.Duration
+	mu       sync.Mutex
+}
+
+func NewCooldownLock(cooldown time.Duration) *CooldownLock {
+	return &CooldownLock{
+		lastLock: time.Now().Add(-cooldown),
+		cooldown: cooldown,
+	}
+}
+
+func (cl *CooldownLock) TryLock() bool {
+	if time.Since(cl.lastLock) < cl.cooldown {
+		return false
+	}
+	return cl.mu.TryLock()
+}
+
+func (cl *CooldownLock) Unlock() {
+	cl.lastLock = time.Now()
+	cl.mu.Unlock()
 }
